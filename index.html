@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VIX giustificato? — VRP</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--tx:#e8eaf0;--mut:#8b91a1;--ok:#3ecf8e;--hi:#ff5c6c;--lo:#f5b942;--bl:#5aa9ff;--ln:#2a2f3a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:light){:root{--bg:#f4f5f8;--card:#fff;--tx:#14171f;--mut:#667085;--ln:#dde1e8}}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,system-ui,Segoe UI,sans-serif}
+main{max-width:720px;margin:0 auto;padding:14px}
+h1{font-size:18px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:12px}
+.verdict{font-size:22px;font-weight:700;text-align:center;padding:6px 0}
+.sub{color:var(--mut);font-size:13px;text-align:center}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.k{background:var(--bg);border-radius:10px;padding:8px;text-align:center}
+.k b{display:block;font-size:18px}.k span{color:var(--mut);font-size:11px}
+canvas{width:100%;height:170px;display:block}
+h2{font-size:13px;color:var(--mut);margin:0 0 6px;font-weight:600}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:13px;margin-top:6px}
+button{background:var(--bg);color:var(--tx);border:1px solid var(--ln);border-radius:8px;padding:6px 10px;font-size:13px}
+button.on{border-color:var(--bl);color:var(--bl)}
+.note{color:var(--mut);font-size:12px}
+.err{color:var(--hi);font-size:13px}
+
+select,input[type=number]{background:var(--bg);color:var(--tx);border:1px solid var(--ln);border-radius:8px;padding:5px 6px;font-size:13px}
+canvas{touch-action:pan-y}.tp{min-height:16px;font-size:12px;color:var(--tx);margin-bottom:4px}
+table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:4px 2px;text-align:right;border-bottom:1px solid var(--ln)}th{color:var(--mut);font-weight:600}td:first-child,th:first-child{text-align:left}
+.p{color:var(--hi)}.n{color:var(--lo)}.z{color:var(--ok)}.al{border-color:var(--hi)}
+.ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+</style></head><body><main>
+<h1>VIX giustificato? — Variance Risk Premium</h1>
+<div class="card"><div class="verdict" id="vd">Carico…</div><div class="sub" id="vs"></div></div>
+<div class="card" id="alc"><div class="sub" id="alt"></div></div>
+<div class="card"><div class="ctl"><select id="sx"><option value="SPX">S&amp;P 500 / VIX</option><option value="NDX">Nasdaq 100 / VXN</option><option value="RUT">Russell 2000 / RVX</option></select>
+<select id="sw"><option>10</option><option selected>20</option><option>30</option><option>60</option></select><span class="note">giorni</span>
+<select id="se"><option value="yz">Yang-Zhang</option><option value="pk" selected>Parkinson+gap</option><option value="gk">Garman-Klass+gap</option><option value="cc">Close-to-close</option></select>
+<select id="sr"><option value="60">60g</option><option value="150" selected>150g</option><option value="250">1a</option><option value="500">2a</option></select></div>
+<div class="grid" id="kp" style="margin-top:8px"></div></div>
+<div class="card"><h2>VIX vs vol. realizzata</h2><div class="tp" id="tp">Tocca il grafico per i valori</div><canvas id="c1"></canvas>
+<div class="row"><span style="color:var(--bl)">● VIX</span><span style="color:var(--lo)">● Vol. realizzata</span></div></div>
+<div class="card"><h2>VRP = IV − vol. realizzata (punti)</h2><canvas id="c2"></canvas></div>
+<div class="card"><h2>Realizzata vs implicita sullo stesso orizzonte (VRP in punti)</h2><div style="overflow-x:auto"><table id="hm"></table></div>
+<div class="row"><span class="note">Overnight vs intraday (20g, annualizzata)</span><b id="oi"></b></div></div>
+<div class="card"><h2>Struttura a termine (indici S&amp;P)</h2><canvas id="c3" style="height:110px"></canvas><div id="ts"></div><h2 style="margin-top:10px">Futures VIX (CBOE)</h2><canvas id="c4" style="height:110px;display:none"></canvas><div id="fx"></div></div>
+<div class="card"><h2>Statistiche VRP e regime</h2><div id="st"></div></div>
+<div class="card"><h2>Quanto è sfruttabile (storico, non previsione)</h2><div id="ex"></div></div>
+<div class="card"><h2>Contesto ed eventi</h2><div id="ev"></div></div>
+<div class="card"><h2>Allarme</h2><div class="ctl"><span class="note">z-score &gt;</span><input id="az" type="number" step="0.1" value="1.8" style="width:64px"><label class="note"><input id="ai" type="checkbox" checked> solo se curva non invertita</label></div></div>
+<div class="card"><div class="row"><button id="ex1">Esporta CSV</button><span class="note" id="msg"></span></div></div>
+<p class="note">Indicatore descrittivo, non un segnale operativo. Il VIX guarda 30 giorni avanti, la vol. realizzata indietro. La curva futures viene da CBOE via Worker (/vx); quella sopra usa gli indici VIX9D/VIX/VIX3M/VIX6M/VIX1Y (spot). Statistiche senza costi e slippage; campione storico limitato a 5 anni.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const W="https://icy-sea-ec77.alessiostanca3.workers.dev";
+const IDX={SPX:["^GSPC","^VIX"],NDX:["^NDX","^VXN"],RUT:["^RUT","^RVX"]};
+const P=s=>"/v8/finance/chart/"+encodeURIComponent(s)+"?range=5y&interval=1d";
+const Y1="https://query1.finance.yahoo.com",Y2="https://query2.finance.yahoo.com";
+async function get(s){
+  const t=[W+P(s),W+"/?url="+encodeURIComponent(Y1+P(s)),W+"/?url="+encodeURIComponent(Y2+P(s)),Y1+P(s),Y2+P(s)];let e;
+  for(const u of t){try{
+    const r=await fetch(u);if(!r.ok)throw new Error("HTTP "+r.status);
+    const c=(await r.json()).chart.result[0],q=c.indicators.quote[0],m=new Map();
+    c.timestamp.forEach((x,i)=>{const k=q.close[i];if(k!=null)m.set(new Date(x*1e3).toISOString().slice(0,10),{c:k,h:q.high[i]||k,l:q.low[i]||k,o:q.open[i]||k})});
+    return m}catch(x){e=x}}
+  throw e}
+const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+const sd=a=>{const m=mean(a);return Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/(a.length-1))};
+const f=(x,d=1)=>x==null||isNaN(x)?"–":x.toFixed(d);
+const pr=(a,x)=>a.length?Math.round(a.filter(y=>y<=x).length/a.length*100):null;
+const lvl=v=>v<15?0:v<20?1:v<30?2:3,LN=["VIX<15","15–20","20–30",">30"];
+const C={};let D=null,CUR=null,ROWS=null;
+const sg=x=>(x>0?"+":"")+f(x);
+function mk(d){const A={ret:[],g:[],oc:[],rs:[],pk:[],gk:[]};
+  d.forEach((k,i)=>{const b=D.spx.get(k),p=i?D.spx.get(d[i-1]):null,L=Math.log;
+    A.ret[i]=p?L(b.c/p.c):0;const g=p?L(b.o/p.c):0,oc=L(b.c/b.o),hl=L(b.h/b.l);
+    A.g[i]=g;A.oc[i]=oc;A.rs[i]=L(b.h/b.c)*L(b.h/b.o)+L(b.l/b.c)*L(b.l/b.o);
+    A.pk[i]=hl*hl/(4*Math.LN2)+g*g;A.gk[i]=.5*hl*hl-(2*Math.LN2-1)*oc*oc+g*g});return A}
+function est(A,e,w,i){const s=i-w+1,sl=a=>a.slice(s,i+1);let v;
+  if(e=="cc")v=sd(sl(A.ret))**2;
+  else if(e=="yz"){const k=.34/(1.34+(w+1)/(w-1));v=sd(sl(A.g))**2+k*sd(sl(A.oc))**2+(1-k)*mean(sl(A.rs))}
+  else v=mean(sl(A[e]));
+  return Math.sqrt(Math.max(v,0)*252)*100}
+async function load(force){
+  const [p,v]=IDX[$("sx").value],S=[p,v,"^VIX9D","^VIX3M","^VIX6M","^VIX1Y","^VVIX","^SKEW"];
+  const R=await Promise.allSettled(S.map(s=>(C[s]&&!force)?C[s]:get(s)));
+  R.forEach((r,i)=>{if(r.status=="fulfilled")C[S[i]]=r.value});
+  if(R[0].status!="fulfilled"||R[1].status!="fulfilled"){
+    $("vd").textContent="Dati non disponibili";$("msg").innerHTML='<span class="err">Errore: '+(R[0].reason||R[1].reason)+'</span>';return}
+  D={spx:C[p],vix:C[v],v9:C["^VIX9D"],v3:C["^VIX3M"],v6:C["^VIX6M"],v1:C["^VIX1Y"],vv:C["^VVIX"],sk:C["^SKEW"],spot:$("sx").value=="SPX"};
+  D.fx=null;if(D.spot){try{const r=await fetch(W+"/vx");if(r.ok){const j=await r.json();if(j.curve&&j.curve.length>1)D.fx=j.curve}}catch(e){}}
+  const miss=S.filter((s,i)=>R[i].status!="fulfilled");
+  $("msg").textContent=miss.length?"Mancano: "+miss.join(", "):"";render()}
+const lastOf=(M,d)=>{if(!M)return null;let k=null;for(const x of M.keys())if(x<=d&&(k==null||x>k))k=x;return k?M.get(k).c:null};
+function render(){
+  const E=$("se").value,Wn=+$("sw").value;
+  let d=[...D.spx.keys()].sort();const now=new Date(),td=now.toISOString().slice(0,10);
+  if(d[d.length-1]==td&&now.getUTCHours()*60+now.getUTCMinutes()<21*60+15)d.pop();
+  const n=d.length,A=mk(d),rows=[];
+  for(let i=61;i<n;i++){const v=D.vix.get(d[i]);if(!v)continue;
+    const rv=est(A,E,Wn,i),v3=D.v3?D.v3.get(d[i]):null;
+    rows.push({i,d:d[i],vix:v.c,rv,vrp:v.c-rv,cv:v3?(v.c>v3.c?1:0):null,fwd:i+21<n?est(A,E,21,i+21):null})}
+  ROWS=rows;const L=rows[rows.length-1],iL=L.i,vrps=rows.map(r=>r.vrp);
+  const h=vrps.slice(-252),z=(L.vrp-mean(h))/sd(h);
+  const v9=lastOf(D.v9,L.d),v3=lastOf(D.v3,L.d),v6=lastOf(D.v6,L.d),v1=lastOf(D.v1,L.d),vv=lastOf(D.vv,L.d),sk=lastOf(D.sk,L.d);
+  const inv=D.spot&&v3!=null&&L.vix>v3,back=D.spot&&v9!=null&&v9>L.vix;
+  let t,c,why;
+  if(inv){t="VIX ALTO, MA GIUSTIFICATO";c="var(--ok)";why="Curva invertita (VIX > VIX3M): stress reale"}
+  else if(z>1.5||L.vrp>8){t="VIX TROPPO ALTO";c="var(--hi)";why="Prezza più movimento di quanto se ne veda, senza stress sulla curva"}
+  else if(z<-1||L.vrp<0){t="VIX TROPPO BASSO";c="var(--lo)";why="Il mercato si muove più di quanto prezzano le opzioni"}
+  else if(z>1){t="VIX UN PO' ALTO";c="var(--lo)";why="Premio sopra la norma, non ancora eccessivo"}
+  else{t="VIX NELLA NORMA";c="var(--ok)";why="Premio in linea con l'ultimo anno"}
+  $("vd").textContent=t;$("vd").style.color=c;$("vs").textContent=why+" · dati al "+L.d;
+  const K=[["IV",f(L.vix)],["Vol. realizzata",f(L.rv)],["VRP",sg(L.vrp)],["IV / RV",f(L.vix/L.rv,2)+"×"],["Z-score 1a",f(z,2)],["VVIX",f(vv,0)]];
+  $("kp").innerHTML=K.map(a=>`<div class="k"><b>${a[1]}</b><span>${a[0]}</span></div>`).join("");
+  // alert
+  const thr=+$("az").value,hit=z>thr&&!($("ai").checked&&inv);
+  try{localStorage.az=$("az").value;localStorage.ai=$("ai").checked?1:""}catch(e){}
+  $("alc").className="card"+(hit?" al":"");$("alt").textContent=hit?"⚠ ALLARME: z-score "+f(z,2)+" > "+thr+(inv?"":" e curva non invertita"):"Allarme non attivo (z "+f(z,2)+")";
+  // heatmap
+  const ivf=w=>!D.spot?[L.vix,"IDX"]:w<=10&&v9!=null?[v9,"VIX9D"]:w<=30?[L.vix,"VIX"]:v3!=null?[v3,"VIX3M"]:[L.vix,"VIX"];
+  const ES=[["cc","CC"],["pk","PK"],["gk","GK"],["yz","YZ"]];
+  $("hm").innerHTML="<tr><th>Orizzonte (IV)</th>"+ES.map(e=>"<th>"+e[1]+"</th>").join("")+"</tr>"+[10,20,30,60].map(w=>{const[iv,nm]=ivf(w);
+    return`<tr><td>${w}g (${nm} ${f(iv)})</td>`+ES.map(e=>{const x=iv-est(A,e[0],w,iL);return`<td class="${x>8?"p":x<0?"n":"z"}">${sg(x)}</td>`}).join("")+"</tr>"}).join("");
+  const ov=Math.sqrt(mean(A.g.slice(iL-19,iL+1).map(x=>x*x))*252)*100,it=Math.sqrt(mean(A.oc.slice(iL-19,iL+1).map(x=>x*x))*252)*100;
+  $("oi").textContent="notte "+f(ov)+" · giorno "+f(it);
+  // term structure
+  const T=[["9G",v9],["1M",L.vix],["3M",v3],["6M",v6],["1A",v1]].filter(x=>x[1]!=null);
+  $("ts").innerHTML=(D.spot?`<div class="row"><span>Slope 3M − 1M</span><b>${v3!=null?sg(v3-L.vix)+" pt ("+sg((v3/L.vix-1)*100)+"%) · "+(inv?"INVERTITA":"contango"):"–"}</b></div>`+
+   `<div class="row"><span>Slope 9G − 1M</span><b>${v9!=null?sg(v9-L.vix)+" pt · "+(back?"backwardation":"contango"):"–"}</b></div>`+
+   `<div class="row"><span>Slope 1A − 3M</span><b>${v1!=null&&v3!=null?sg(v1-v3)+" pt":"–"}</b></div>`:'<div class="note">Curva disponibile solo con S&amp;P 500</div>');
+  draw3(D.spot?T:[]);
+  const FX=D.spot&&D.fx?D.fx:null;$("c4").style.display=FX?"block":"none";
+  if(FX){const F=FX.map(q=>q.settle),b=F[0]-L.vix,sl=F[1]-F[0],k=Math.min(3,F.length-1),lg=F[F.length-1]-F[k];
+    $("fx").innerHTML=`<div class="row"><span>Basis F1 − VIX</span><b>${sg(b)} pt (${sg(b/L.vix*100)}%)</b></div>`+
+     `<div class="row"><span>Slope F2 − F1</span><b>${sg(sl)} pt (${sg(sl/F[0]*100)}%) · ${sl<0?"BACKWARDATION":"contango"}</b></div>`+
+     `<div class="row"><span>Slope F${F.length} − F${k+1}</span><b>${sg(lg)} pt</b></div>`+
+     `<div class="row"><span>Roll mensile stimato (F2/F1 − 1)</span><b>${sg(sl/F[0]*100)}%</b></div>`+
+     `<div class="note">Settlement CBOE del ${FX[0].date}. F1 scade il ${FX[0].exp}.</div>`;
+    draw3(FX.map((q,i)=>["F"+(i+1),q.settle]),"c4")}
+  else $("fx").innerHTML='<div class="note">Futures non disponibili (route /vx del Worker): resta la curva indici.</div>';
+  // regime stats
+  const p=(n)=>pr(vrps.slice(-n),L.vrp),cur=L.cv,same=rows.filter(r=>lvl(r.vix)==lvl(L.vix)&&(cur==null||r.cv==null||r.cv==cur));
+  const cond=(a)=>a.length>5?f(mean(a.map(r=>r.vrp)))+" ± "+f(sd(a.map(r=>r.vrp)))+" (n="+a.length+")":"–";
+  const st=[["Percentile VRP 1a / 3a / 5a",p(252)+"° / "+p(756)+"° / "+p(1260)+"°"],
+   ["VRP medio, "+LN[lvl(L.vix)],cond(rows.filter(r=>lvl(r.vix)==lvl(L.vix)))],
+   ["VRP medio, "+(cur==null?"stesso livello":LN[lvl(L.vix)]+(cur?" + backwardation":" + contango")),cond(same)],
+   ["VRP medio, contango / backw.",cond(rows.filter(r=>r.cv==0))+" / "+cond(rows.filter(r=>r.cv==1))]];
+  $("st").innerHTML=st.map(a=>`<div class="row"><span>${a[0]}</span><b>${a[1]}</b></div>`).join("");
+  // exploitability
+  let sim=same.filter(r=>r.fwd!=null&&Math.abs(r.vrp-L.vrp)<=1.5),tag="VRP ±1.5 pt, stesso regime";
+  if(sim.length<15){sim=same.filter(r=>r.fwd!=null);tag="stesso regime (campione VRP troppo piccolo)"}
+  if(sim.length>=5){const ed=sim.map(r=>r.vix-r.fwd).sort((a,b)=>a-b);
+    $("ex").innerHTML=`<div class="note">Casi simili: ${tag}, n=${sim.length}. Edge = IV − vol. realizzata dei 21 giorni successivi.</div>`+
+    `<div class="row"><span>Hit rate (realizzata &lt; IV)</span><b>${Math.round(ed.filter(x=>x>0).length/ed.length*100)}%</b></div>`+
+    `<div class="row"><span>Edge medio / mediano</span><b>${sg(mean(ed))} / ${sg(ed[Math.floor(ed.length/2)])} pt vol</b></div>`+
+    `<div class="row"><span>Peggior 5% (venditore di vol)</span><b>${sg(ed[Math.floor(ed.length*.05)])} pt vol</b></div>`+
+    `<div class="row"><span>Peggior caso</span><b>${sg(ed[0])} pt vol</b></div>`+
+    `<div class="note">Proxy su short variance / VIX: non include costi, margini né il path intermedio (drawdown reale più profondo).</div>`}
+  else $("ex").textContent="Campione insufficiente";
+  // context
+  const vh=Array.from(D.vv?D.vv.values():[]).map(x=>x.c),sh=Array.from(D.sk?D.sk.values():[]).map(x=>x.c);
+  const FO=["2026-12-09"],dd=s=>Math.round((new Date(s)-new Date(td))/864e5);
+  const nf=FO.find(x=>x>=td),nx=(()=>{let y=now.getUTCFullYear(),m=now.getUTCMonth();for(let k=0;k<3;k++){const q=new Date(Date.UTC(y,m+k,1));q.setUTCDate(1+(5-q.getUTCDay()+7)%7);const s=q.toISOString().slice(0,10);if(s>=td)return s}})();
+  $("ev").innerHTML=`<div class="row"><span>VVIX (percentile 1a / 5a)</span><b>${f(vv,0)} · ${pr(vh.slice(-252),vv)}° / ${pr(vh,vv)}°</b></div>`+
+   `<div class="row"><span>SKEW CBOE (proxy tail-risk)</span><b>${f(sk,0)} · ${pr(sh.slice(-252),sk)}° 1a</b></div>`+
+   `<div class="row"><span>Prossimo FOMC (decisione)</span><b>${nf?nf+" · "+dd(nf)+" gg":"non in elenco"}</b></div>`+
+   `<div class="row"><span>Prossimo NFP (1° venerdì, indicativo)</span><b>${nx} · ${dd(nx)} gg</b></div>`+
+   `<div class="note">CPI, earnings big tech e skew 25-delta non sono ricavabili da Yahoo gratuito.</div>`;
+  CUR=rows.slice(-(+$("sr").value));line("c1",CUR);bars("c2",CUR)}
+function cv(id){const c=$(id),r=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;const x=c.getContext("2d");x.scale(r,r);return[x,w,h]}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function line(id,s){
+  const[x,w,h]=cv(id),a=s.map(q=>q.vix),b=s.map(q=>q.rv),all=a.concat(b);
+  const mn=Math.min(...all)-1,mx=Math.max(...all)+1,X=i=>i/(s.length-1)*(w-34)+2,Y=v=>h-14-(v-mn)/(mx-mn)*(h-24);
+  x.font="10px sans-serif";x.fillStyle=css("--mut");x.strokeStyle=css("--ln");
+  for(let k=0;k<4;k++){const v=mn+(mx-mn)*k/3;x.beginPath();x.moveTo(0,Y(v));x.lineTo(w-30,Y(v));x.stroke();x.fillText(v.toFixed(0),w-26,Y(v)+3)}
+  [[a,css("--bl")],[b,css("--lo")]].forEach(([z,col])=>{x.beginPath();x.strokeStyle=col;x.lineWidth=2;z.forEach((v,i)=>i?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v)));x.stroke()})}
+function bars(id,s){
+  const[x,w,h]=cv(id),v=s.map(q=>q.vrp),mx=Math.max(8,...v.map(Math.abs))+1,bw=(w-34)/s.length,Y=a=>h/2-a/mx*(h/2-8);
+  x.strokeStyle=css("--ln");x.beginPath();x.moveTo(0,Y(0));x.lineTo(w-30,Y(0));x.stroke();
+  x.setLineDash([3,3]);x.beginPath();x.moveTo(0,Y(8));x.lineTo(w-30,Y(8));x.stroke();x.setLineDash([]);
+  x.fillStyle=css("--mut");x.font="10px sans-serif";x.fillText("0",w-26,Y(0)+3);x.fillText("8",w-26,Y(8)+3);
+  v.forEach((a,i)=>{x.fillStyle=a<0?css("--lo"):a>8?css("--hi"):css("--ok");x.fillRect(2+i*bw,Math.min(Y(0),Y(a)),Math.max(bw-0.5,1),Math.abs(Y(a)-Y(0)))})}
+function draw3(T,id="c3"){const[x,w,h]=cv(id);if(T.length<2)return;
+  const mn=Math.min(...T.map(a=>a[1]))-1,mx=Math.max(...T.map(a=>a[1]))+1,X=i=>20+i/(T.length-1)*(w-60),Y=v=>h-20-(v-mn)/(mx-mn)*(h-34);
+  x.font="11px sans-serif";x.textAlign="center";x.strokeStyle=css("--bl");x.lineWidth=2;x.beginPath();
+  T.forEach((a,i)=>i?x.lineTo(X(i),Y(a[1])):x.moveTo(X(i),Y(a[1])));x.stroke();
+  T.forEach((a,i)=>{x.fillStyle=css("--bl");x.beginPath();x.arc(X(i),Y(a[1]),3,0,7);x.fill();x.fillStyle=css("--tx");x.fillText(f(a[1]),X(i),Y(a[1])-8);x.fillStyle=css("--mut");x.fillText(a[0],X(i),h-4)})}
+["c1","c2"].forEach(id=>{const c=$(id);c.onpointermove=c.onpointerdown=e=>{if(!CUR)return;const r=c.getBoundingClientRect(),
+  i=Math.max(0,Math.min(CUR.length-1,Math.round((e.clientX-r.left-2)/(r.width-34)*(CUR.length-1)))),q=CUR[i];
+  $("tp").textContent=`${q.d} · IV ${f(q.vix)} · RV ${f(q.rv)} · VRP ${sg(q.vrp)}`}});
+["sw","se","sr","az","ai"].forEach(i=>$(i).onchange=()=>D&&render());
+$("sx").onchange=()=>load();
+$("ex1").onclick=()=>{if(!ROWS)return;const csv="data,iv,rv,vrp,rv_fwd21\n"+ROWS.map(r=>[r.d,r.vix,r.rv,r.vrp,r.fwd??""].join(",")).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="vrp.csv";a.click()};
+try{if(localStorage.az)$("az").value=localStorage.az;$("ai").checked=localStorage.ai!==""}catch(e){}
+addEventListener("resize",()=>D&&render());
+load();setInterval(()=>load(true),300000);
+</script></body></html>
